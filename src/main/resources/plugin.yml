@@ -1,0 +1,5 @@
+main: fr.papierpain.PlugOutBlanquetteDeVeau
+name: PlugOutBlanquetteDeVeau
+version: '1.0.0'
+description: Un PlugOut qui fait n'importe quoi...
+api-version: 1.20
