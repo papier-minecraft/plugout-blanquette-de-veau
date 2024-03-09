@@ -1,0 +1,98 @@
+##########################
+## VARIABLES
+##########################
+
+variables:
+  MAVEN_OPTS: >-
+    -Dhttps.protocols=TLSv1.2
+    -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
+  MAVEN_CLI_OPTS: >-
+    -DskipTests
+    --no-transfer-progress
+
+##########################
+## STAGE
+##########################
+
+stages:
+  - build
+  - test
+  - deploy
+  - release
+
+##########################
+## DEFAULT
+##########################
+
+default:
+  image: maven:3.9.6-eclipse-temurin-17
+  cache:
+    key: $CI_COMMIT_REF_SLUG
+    paths:
+      - .m2/
+
+##########################
+## JOBS
+##########################
+
+🚜 Construction de la BlanquetteDeVeau:
+  stage: build
+  script: mvn $MAVEN_CLI_OPTS package
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^(?:\d+.){2}(?:\d+)$/
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+🧪 Petit test:
+  stage: test
+  script: mvn test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+🚀 Livraison de la BlanquetteDeVeau:
+  stage: deploy
+  variables:
+    SNAPSHOT_VERSION: "true"
+  script:
+    - | # Passage de la version en SNAPSHOT si SNAPSHOT_VERSION est à true
+      if [ "$SNAPSHOT_VERSION" == "true" ]; then
+        mvn versions:set -DnewVersion=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)-SNAPSHOT
+      fi
+    - mvn $MAVEN_CLI_OPTS deploy -s .gitlab/ci_settings.xml
+  after_script: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" > .env
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^(?:\d+.){2}(?:\d+)$/ || $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+      variables:
+        SNAPSHOT_VERSION: "false"
+    - if: $CI_PIPELINE_SOURCE == "web"
+  artifacts:
+    reports:
+      dotenv: .env
+
+🍺 Nouvelle release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script: echo "Nouvelle release $VERSION de la Blanquette de veau !!!"
+  release:
+    tag_name: '$VERSION'
+    description: 'Release BlanquetteDeVeau:$VERSION'
+    ref: '$VERSION'
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+##########################
+## WORKFLOW
+##########################
+
+workflow:
+  name: $PIPELINE_NAME
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
+      variables:
+        PIPELINE_NAME: 🚜 Petite test MAMENE !
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+      variables:
+        PIPELINE_NAME: 🍺 [$CI_COMMIT_TAG] Travail bien travaillé ! 😎
