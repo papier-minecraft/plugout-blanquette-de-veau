@@ -38,10 +38,6 @@ default:
 🚜 Construction de la BlanquetteDeVeau:
   stage: build
   script: mvn $MAVEN_CLI_OPTS package
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^(?:\d+.){2}(?:\d+)$/
-    - if: $CI_PIPELINE_SOURCE == "web"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 🧪 Petit test:
   stage: test
@@ -74,9 +70,33 @@ default:
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   script: echo "Nouvelle release $VERSION de la Blanquette de veau !!!"
   release:
-    tag_name: '$VERSION'
-    description: 'Release BlanquetteDeVeau:$VERSION'
-    ref: '$VERSION'
+    tag_name: $VERSION
+    name: 'Release $VERSION'
+    description: 'Release BlanquetteDeVeau-$VERSION'
+    assets:
+      links:
+        - name: 'PlugOutBlanquetteDeVeau-$VERSION.jar'
+          url: '$CI_SERVER_PROTOCOL://$CI_SERVER_FQDN/$CI_PROJECT_PATH/-/packages/'
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+💥 Version plus heiiiinnn:
+  stage: .post
+  script:
+    - | # Upgrade version X.X.X => X.X+1.0
+      VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+      NEW_VERSION=$(echo $VERSION | awk -F. '{$NF = 0; $(NF-1) = $(NF-1) + 1; print $0}' OFS=.)
+      mvn versions:set -DnewVersion=$NEW_VERSION
+      COMMIT_MSG="💥 feat: Upgrade version to $NEW_VERSION [skip ci]"
+    - | # Push without API
+      RESULT=$(curl --request POST --form "branch=$CI_COMMIT_REF_NAME" --form "commit_message=$COMMIT_MSG" --form "start_branch=$CI_COMMIT_REF_NAME" --form "actions[][action]=update" --form "actions[][file_path]=pom.xml" --form "actions[][content]=<pom.xml" --header "PRIVATE-TOKEN: $BLANQUETTE_TOKEN" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/commits")
+    - | # Check if the commit has been pushed (contains the commit message)
+      if [[ "$RESULT" != *"$COMMIT_MSG"* ]]; then
+        echo "💥 Version upgrade failed"
+        exit 1
+      fi
   rules:
     - if: $CI_COMMIT_TAG
       when: never
@@ -89,10 +109,12 @@ default:
 workflow:
   name: $PIPELINE_NAME
   rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        PIPELINE_NAME: 🧪 Petite vérification de la BlanquetteDeVeau
     - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH
       variables:
         PIPELINE_NAME: 🚜 Petite test MAMENE !
-      when: always
-    - if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
       variables:
-        PIPELINE_NAME: 🍺 [$CI_COMMIT_TAG] Travail bien travaillé ! 😎
+        PIPELINE_NAME: 🍺 Travail bien travaillé ! 😎
